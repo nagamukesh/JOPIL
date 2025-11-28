@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Packet Visualization Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .stat-card h3 {
+            color: #667eea;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            margin-bottom: 10px;
+            letter-spacing: 1px;
+        }
+
+        .stat-card .value {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .stat-card .label {
+            color: #888;
+            font-size: 0.85em;
+            margin-top: 5px;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(600px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .chart-card {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .chart-card h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+
+        .export-section {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+        }
+
+        .export-section h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            margin: 5px;
+        }
+
+        .btn-primary {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+
+        .btn-secondary {
+            background: #FF5722;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #E64A19;
+        }
+
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+
+        .status-active {
+            background: #4CAF50;
+            animation: pulse 2s infinite;
+        }
+
+        .status-inactive {
+            background: #ccc;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .flow-table {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow-x: auto;
+        }
+
+        .flow-table h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            background: #667eea;
+            color: white;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        tbody tr:hover {
+            background: #f8f9fa;
+            cursor: pointer;
+        }
+
+        .protocol-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: bold;
+        }
+
+        .protocol-tcp {
+            background: #4CAF50;
+            color: white;
+        }
+
+        .protocol-udp {
+            background: #2196F3;
+            color: white;
+        }
+
+        .protocol-icmp {
+            background: #FF9800;
+            color: white;
+        }
+
+        .debug-info {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Network Packet Visualization Dashboard</h1>
+
+        <!-- Statistics Cards -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <h3>Total Packets</h3>
+                <div class="value" id="total-packets">0</div>
+                <div class="label">captured</div>
+            </div>
+            <div class="stat-card">
+                <h3>Packet Rate</h3>
+                <div class="value" id="packet-rate">0</div>
+                <div class="label">packets/sec</div>
+            </div>
+            <div class="stat-card">
+                <h3>Total Data</h3>
+                <div class="value" id="total-bytes">0</div>
+                <div class="label">transferred</div>
+            </div>
+            <div class="stat-card">
+                <h3>Active Flows</h3>
+                <div class="value" id="flow-count">0</div>
+                <div class="label">unique flows</div>
+            </div>
+            <div class="stat-card" id="latency-card" style="display: none;">
+                <h3>Avg Latency</h3>
+                <div class="value" id="avg-latency">0</div>
+                <div class="label">microseconds</div>
+            </div>
+            <div class="stat-card" id="throughput-card">
+                <h3>Throughput</h3>
+                <div class="value" id="throughput">0</div>
+                <div class="label">Mbps</div>
+            </div>
+            <div class="stat-card">
+                <h3>Uptime</h3>
+                <div class="value" id="uptime">0</div>
+                <div class="label">seconds</div>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h2>📈 Packet Rate Over Time</h2>
+                <div class="chart-container">
+                    <canvas id="packet-rate-chart"></canvas>
+                </div>
+            </div>
+            <div class="chart-card">
+                <h2>📊 Protocol Distribution</h2>
+                <div class="chart-container">
+                    <canvas id="protocol-chart"></canvas>
+                </div>
+            </div>
+            <div class="chart-card" id="latency-chart-card" style="display: none;">
+                <h2>⏱️ Average Latency Trend</h2>
+                <div class="chart-container">
+                    <canvas id="latency-chart"></canvas>
+                </div>
+            </div>
+            <div class="chart-card">
+                <h2>💻 CPU Distribution</h2>
+                <div class="chart-container">
+                    <canvas id="cpu-chart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Export Section -->
+        <div class="export-section">
+            <h2>💾 Data Capture & Export</h2>
+            <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 15px;">
+                <div>
+                    <span class="status-indicator" id="capture-status"></span>
+                    <span id="capture-text">Status: Stopped</span>
+                </div>
+                <div style="flex: 1;">
+                    <button id="start-log-btn" class="btn btn-primary">▶ Start Logging</button>
+                    <button id="stop-log-btn" class="btn btn-secondary" disabled>⬇ Stop & Download CSV</button>
+                </div>
+            </div>
+            <div id="log-info" style="font-size: 0.9em; color: #666;">
+                Packets captured: <strong id="captured-count">0</strong>
+            </div>
+            <div class="debug-info">
+                Debug: Last packet received: <span id="last-packet-time">Never</span><br>
+                WebSocket status: <span id="ws-status">Connecting...</span>
+            </div>
+        </div>
+
+        <!-- Flow Table -->
+        <div class="flow-table">
+            <h2>🌊 Active Flows</h2>
+            <table id="flow-table">
+                <thead>
+                    <tr>
+                        <th>Hash</th>
+                        <th>Flow</th>
+                        <th>Protocol</th>
+                        <th>Packets</th>
+                        <th>Bytes</th>
+                        <th>Latency (µs)</th>
+                        <th>Probes</th>
+                    </tr>
+                </thead>
+                <tbody id="flow-table-body">
+                    <tr><td colspan="7" style="text-align: center; color: #999;">Loading flows...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const socket = new WebSocket("ws://" + window.location.host + "/ws");
+
+        socket.onopen = function() {
+            console.log('WebSocket connected');
+            document.getElementById('ws-status').textContent = 'Connected';
+            document.getElementById('ws-status').style.color = '#4CAF50';
+            // Request stats on connect
+            setTimeout(updateStats, 500);
+        };
+
+        socket.onmessage = function(event) {
+            const msg = JSON.parse(event.data);
+            
+            if (msg.type === 'new_packet') {
+                handleNewPacket(msg.data); 
+            } else if (msg.type === 'timeseries_update') {
+                handleTimeseries(msg.data);
+            } else if (msg.type === 'initial_stats') {
+                updateStatsDisplay(msg.data);
+            }
+        };
+
+        socket.onerror = function(error) {
+            console.error('WebSocket error:', error);
+            document.getElementById('ws-status').textContent = 'Error';
+            document.getElementById('ws-status').style.color = '#FF5722';
+        };
+
+        socket.onclose = function() {
+            console.log('WebSocket disconnected');
+            document.getElementById('ws-status').textContent = 'Disconnected';
+            document.getElementById('ws-status').style.color = '#FF5722';
+        };
+
+        // Helper to map Go JSON to your existing JS Logic
+        function handleNewPacket(packet) {
+            document.getElementById('last-packet-time').textContent = new Date().toLocaleTimeString();
+            
+            // Update live feed UI
+            if (isLogging) {
+                capturedPackets.push({
+                    timestamp: packet.timestamp_str || new Date().toISOString(),
+                    flow_id: packet.flow_id,
+                    hash: packet.hash,
+                    protocol: packet.protocol,
+                    probe: packet.probe,
+                    cpu: packet.cpu,
+                    queue: packet.queue,
+                    size: packet.len,
+                });
+                document.getElementById('captured-count').textContent = capturedPackets.length.toLocaleString();
+            }
+        }
+
+        function handleTimeseries(data) {
+            // Update packet rate
+            const pps = data.current_pps || data.current_rate || 0;
+            document.getElementById('packet-rate').textContent = pps.toLocaleString();
+            
+            // Update rate chart
+            ppsHistory.push(pps);
+            if (ppsHistory.length > 60) {
+                ppsHistory.shift();
+            }
+            
+            const timeLabels = ppsHistory.map((_, i) => `-${ppsHistory.length - i}s`);
+            packetRateChart.data.labels = timeLabels;
+            packetRateChart.data.datasets[0].data = ppsHistory;
+            packetRateChart.update('none');
+        }
+
+        function updateStatsDisplay(stats) {
+            console.log('Stats update:', stats);
+            document.getElementById('total-packets').textContent = stats.total_packets.toLocaleString();
+            document.getElementById('total-bytes').textContent = formatBytes(stats.total_bytes || 0);
+            document.getElementById('flow-count').textContent = (stats.flow_count || 0).toLocaleString();
+            document.getElementById('uptime').textContent = Math.floor(stats.uptime || 0);
+            
+            // Update protocol chart
+            const protocols = stats.protocols || {};
+            const protoLabels = Object.keys(protocols);
+            const protoData = Object.values(protocols);
+            
+            if (protoLabels.length > 0) {
+                protocolChart.data.labels = protoLabels;
+                protocolChart.data.datasets[0].data = protoData;
+                protocolChart.update('none');
+            }
+            
+            // Update CPU chart
+            const cpus = stats.cpus || {};
+            const cpuLabels = Object.keys(cpus).map(c => `CPU ${c}`);
+            const cpuData = Object.values(cpus);
+            
+            if (cpuLabels.length > 0) {
+                cpuChart.data.labels = cpuLabels;
+                cpuChart.data.datasets[0].data = cpuData;
+                cpuChart.update('none');
+            }
+        }
+        
+        // Chart instances
+        let packetRateChart, protocolChart, latencyChart, cpuChart;
+        
+        // Initialize charts
+        function initCharts() {
+            const packetRateCtx = document.getElementById('packet-rate-chart').getContext('2d');
+            packetRateChart = new Chart(packetRateCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Packets/sec',
+                        data: [],
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+            
+            const protocolCtx = document.getElementById('protocol-chart').getContext('2d');
+            protocolChart = new Chart(protocolCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        data: [],
+                        backgroundColor: ['#4CAF50', '#2196F3', '#FF9800', '#9C27B0']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false
+                }
+            });
+            
+            const latencyCtx = document.getElementById('latency-chart').getContext('2d');
+            latencyChart = new Chart(latencyCtx, {
+                type: 'line',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Avg Latency (µs)',
+                        data: [],
+                        borderColor: '#FF5722',
+                        backgroundColor: 'rgba(255, 87, 34, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+            
+            const cpuCtx = document.getElementById('cpu-chart').getContext('2d');
+            cpuChart = new Chart(cpuCtx, {
+                type: 'bar',
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Packets per CPU',
+                        data: [],
+                        backgroundColor: '#667eea'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { y: { beginAtZero: true } }
+                }
+            });
+        }
+        
+        // Update statistics with PPS calculation
+        let lastTotalPackets = 0;
+        let lastTotalBytes = 0;
+        let ppsHistory = [];
+        let hasLatencyData = false;
+        
+        function updateStats() {
+            fetch('/api/stats')
+                .then(response => response.json())
+                .then(data => {
+                    console.log('Stats received:', data);
+                    
+                    const currentTotal = data.total_packets;
+                    const currentBytes = data.total_bytes || 0;
+                    const pps = currentTotal - lastTotalPackets;
+                    const bytesPerSec = currentBytes - lastTotalBytes;
+                    const mbps = (bytesPerSec * 8 / 1000000).toFixed(2); // Convert to Mbps
+                    
+                    lastTotalPackets = currentTotal;
+                    lastTotalBytes = currentBytes;
+                    
+                    // Update PPS history for chart
+                    ppsHistory.push(pps);
+                    if (ppsHistory.length > 60) {
+                        ppsHistory.shift(); // Keep last 60 seconds
+                    }
+                    
+                    // Update packet rate chart immediately
+                    const timeLabels = ppsHistory.map((_, i) => `-${ppsHistory.length - i}s`);
+                    packetRateChart.data.labels = timeLabels;
+                    packetRateChart.data.datasets[0].data = ppsHistory;
+                    packetRateChart.update('none'); // No animation for performance
+                    
+                    document.getElementById('total-packets').textContent = currentTotal.toLocaleString();
+                    document.getElementById('packet-rate').textContent = pps.toLocaleString();
+                    document.getElementById('throughput').textContent = mbps;
+                    document.getElementById('total-bytes').textContent = formatBytes(currentBytes);
+                    document.getElementById('flow-count').textContent = data.flow_count || 0;
+                    document.getElementById('uptime').textContent = Math.floor(data.uptime || 0);
+                    
+                    // Update protocol chart
+                    const protocols = data.protocols || {};
+                    const protoLabels = Object.keys(protocols);
+                    const protoData = Object.values(protocols);
+                    
+                    if (protoLabels.length > 0) {
+                        protocolChart.data.labels = protoLabels;
+                        protocolChart.data.datasets[0].data = protoData;
+                        protocolChart.update('none');
+                    }
+                    
+                    // Update CPU chart
+                    const cpus = data.cpus || {};
+                    const cpuLabels = Object.keys(cpus).map(c => `CPU ${c}`);
+                    const cpuData = Object.values(cpus);
+                    
+                    if (cpuLabels.length > 0) {
+                        cpuChart.data.labels = cpuLabels;
+                        cpuChart.data.datasets[0].data = cpuData;
+                        cpuChart.update('none');
+                    }
+                })
+                .catch(error => console.error('Error fetching stats:', error));
+        }
+        
+        // Update flows table
+        function updateFlows() {
+            fetch('/api/flows')
+                .then(response => response.json())
+                .then(flows => {
+                    const tbody = document.getElementById('flow-table-body');
+                    tbody.innerHTML = '';
+                    
+                    if (flows.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #999;">No flows captured yet</td></tr>';
+                        return;
+                    }
+                    
+                    flows.forEach(flow => {
+                        const row = tbody.insertRow();
+                        row.innerHTML = `
+                            <td><code>${flow.hash}</code></td>
+                            <td>${flow.flow_id}</td>
+                            <td><span class="protocol-badge protocol-${flow.protocol.toLowerCase()}">${flow.protocol}</span></td>
+                            <td>${flow.packet_count}</td>
+                            <td>${formatBytes(flow.total_bytes)}</td>
+                            <td>${flow.total_latency.toFixed(2)}</td>
+                            <td>${flow.probe_count}</td>
+                        `;
+                    });
+                })
+                .catch(error => console.error('Error fetching flows:', error));
+        }
+        
+        // Global log variables
+        let isLogging = false;
+        let capturedPackets = [];
+        
+        // Utility function to download data as CSV
+        function downloadCSV(dataArray) {
+            if (dataArray.length === 0) {
+                alert("No packets captured to download.");
+                return;
+            }
+            
+            const header = [
+                'timestamp', 'flow_id', 'hash', 'protocol', 'probe', 'cpu', 'queue', 'size',
+                'latency_from_nic_us', 'latency_from_prev_us'
+            ];
+            
+            const csvContent = dataArray.map(p => [
+                p.timestamp,
+                `"${p.flow_id}"`,
+                p.hash,
+                p.protocol,
+                p.probe,
+                p.cpu,
+                p.queue,
+                p.size,
+                p.latency_from_nic_us,
+                p.latency_from_prev_us
+            ].join(','));
+            
+            const csvString = [header.join(','), ...csvContent].join('\n');
+            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            
+            link.setAttribute('href', url);
+            link.setAttribute('download', `packet_log_${new Date().toISOString()}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        // Logging button event listeners
+        document.getElementById('start-log-btn').onclick = function() {
+            isLogging = true;
+            capturedPackets = [];
+            document.getElementById('start-log-btn').disabled = true;
+            document.getElementById('stop-log-btn').disabled = false;
+            document.getElementById('capture-text').textContent = 'Status: Capturing...';
+            document.getElementById('capture-status').className = 'status-indicator status-active';
+            document.getElementById('captured-count').textContent = '0';
+        };
+        
+        document.getElementById('stop-log-btn').onclick = function() {
+            isLogging = false;
+            document.getElementById('start-log-btn').disabled = false;
+            document.getElementById('stop-log-btn').disabled = true;
+            document.getElementById('capture-text').textContent = 'Status: Stopped';
+            document.getElementById('capture-status').className = 'status-indicator status-inactive';
+            
+            downloadCSV(capturedPackets);
+            
+            document.getElementById('captured-count').textContent = `${capturedPackets.length} (Downloaded)`;
+            capturedPackets = [];
+        };
+        
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+        }
+        
+        // Initialize
+        initCharts();
+        updateStats();
+        updateFlows();
+        
+        // Periodic updates - REST API fallback
+        setInterval(updateStats, 1000);  // Update every 1 second to show PPS
+        setInterval(updateFlows, 3000);
+    </script>
+</body>
+</html>
