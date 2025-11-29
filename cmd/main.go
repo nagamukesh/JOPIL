@@ -6,13 +6,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"JOPIL-Golang/internal/api"
-	"JOPIL-Golang/internal/monitor"
+	"JOPIL/internal/api"
+	"JOPIL/internal/monitor"
 )
 
 func main() {
 	server := api.NewServer()
-	mon := monitor.New("wlo1", server.EventsChan)
+	mon := monitor.New([]string{"wlo1","eno1"}, server.EventsChan)
 
 	log.Println("Starting Packet Visualizer...")
 

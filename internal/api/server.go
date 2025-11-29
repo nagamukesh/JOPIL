@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"JOPIL-Golang/internal/model"
+	"JOPIL/internal/model"
 
 	"github.com/gorilla/websocket"
 )

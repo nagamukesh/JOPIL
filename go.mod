@@ -1,4 +1,4 @@
-module JOPIL-Golang
+module JOPIL
 
 go 1.21
 
