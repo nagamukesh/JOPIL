@@ -198,6 +198,10 @@ func (fa *FlowAggregator) processEvent(evt *model.PacketEvent) {
 			StateChanges:    make([]*model.TCPStateChange, 0),
 			DNSQueries:      make([]*model.DNSQuery, 0),
 			DNSQueryNames:   make(map[string]uint64),
+			SeenSYN:         false,
+			SeenACK:         false,
+			SeenFIN:         false,
+			SeenRST:         false,
 		}
 		fa.flows[flowKey] = flow
 	}
@@ -259,15 +263,44 @@ func (fa *FlowAggregator) processEvent(evt *model.PacketEvent) {
 
 	// Update TCP state if applicable
 	if evt.Protocol == 6 { // TCP
-		flow.TCPFlags = evt.Protocol
+		flow.TCPFlags = evt.TCPFlags
+		
+		// Constants for TCP flags
+		const (
+			TH_FIN = 0x01
+			TH_SYN = 0x02
+			TH_RST = 0x04
+			TH_PSH = 0x08
+			TH_ACK = 0x10
+			TH_URG = 0x20
+		)
+		
+		// Track which flags we've seen
+		if evt.TCPFlags&TH_SYN != 0 {
+			flow.SeenSYN = true
+		}
+		if evt.TCPFlags&TH_ACK != 0 {
+			flow.SeenACK = true
+		}
+		if evt.TCPFlags&TH_FIN != 0 {
+			flow.SeenFIN = true
+		}
+		if evt.TCPFlags&TH_RST != 0 {
+			flow.SeenRST = true
+		}
+		
 		oldState := flow.State
 		
-		// TCP state transitions based on packet count
-		if flow.PacketCount == 1 {
+		// Determine state based on flags seen
+		if flow.SeenRST {
+			flow.State = "reset"
+		} else if flow.SeenFIN {
+			flow.State = "closing"
+		} else if flow.SeenSYN && flow.SeenACK {
+			flow.State = "established"
+		} else if flow.SeenSYN {
 			flow.State = "syn"
-		} else if flow.PacketCount == 2 {
-			flow.State = "syn-ack"
-		} else if flow.PacketCount >= 3 {
+		} else if flow.SeenACK {
 			flow.State = "established"
 		}
 		
@@ -277,7 +310,7 @@ func (fa *FlowAggregator) processEvent(evt *model.PacketEvent) {
 				Timestamp:   now,
 				OldState:    oldState,
 				NewState:    flow.State,
-				Description: fmt.Sprintf("%s -> %s (packet %d)", oldState, flow.State, flow.PacketCount),
+				Description: fmt.Sprintf("%s -> %s (flags: 0x%02x)", oldState, flow.State, evt.TCPFlags),
 			}
 			flow.StateChanges = append(flow.StateChanges, stateChange)
 		}

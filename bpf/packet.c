@@ -27,7 +27,7 @@ struct packet_event {
     __u16 sport;
     __u16 dport;
     __u8  protocol;
-    __u8  pad1;
+    __u8  tcp_flags;
     __u16 pad2;
     __u32 len;
     __u32 cpu_id;
@@ -101,18 +101,19 @@ int xdp_probe_func(struct xdp_md *ctx) {
     evt->saddr         = ip->saddr;
     evt->daddr         = ip->daddr;
     evt->protocol      = ip->protocol;
+    evt->tcp_flags     = 0;
     evt->sport         = 0;
     evt->dport         = 0;
-    evt->pad1          = 0;
     evt->pad2          = 0;
     evt->pad3          = 0;
 
-    // --- Transport layer (port extraction) ---
+    // --- Transport layer (port extraction + TCP flags) ---
     if (ip->protocol == IPPROTO_TCP) {
         struct tcphdr *tcp = ip_end;
         if ((void *)(tcp + 1) <= data_end) {
-            evt->sport = bpf_ntohs(tcp->source);
-            evt->dport = bpf_ntohs(tcp->dest);
+            evt->sport     = bpf_ntohs(tcp->source);
+            evt->dport     = bpf_ntohs(tcp->dest);
+            evt->tcp_flags = tcp->th_flags;
         }
     } else if (ip->protocol == IPPROTO_UDP) {
         struct udphdr *udp = ip_end;

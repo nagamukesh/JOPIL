@@ -14,7 +14,7 @@ type PacketEvent struct {
 	Sport        uint16
 	Dport        uint16
 	Protocol     uint8
-	ProbePoint   uint8
+	TCPFlags     uint8
 	Pad1         uint16
 	Len          uint32
 	CpuId        uint32
@@ -87,9 +87,15 @@ type Flow struct {
 	TCPFlags       uint8
 	TCPRetransmits uint32
 	TCPOutOfOrder  uint32
+	
+	// TCP flag tracking for state machine
+	SeenSYN  bool
+	SeenACK  bool
+	SeenFIN  bool
+	SeenRST  bool
 
 	// State
-	State string // "new", "established", "closing", "closed"
+	State string // "new", "syn", "established", "closing", "reset"
 	
 	// Packet history for drill-down view (O(1) circular ring buffer)
 	PacketHistory *RingBuffer // Fixed-capacity circular buffer
