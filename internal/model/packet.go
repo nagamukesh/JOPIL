@@ -124,9 +124,9 @@ func (k FlowKey) ReverseFlowKey() FlowKey {
 	}
 }
 
-// IPFromUint32 converts a uint32 to net.IP (assuming network byte order)
+// IPFromUint32 converts a uint32 to net.IP (accounting for little-endian deserialization of network byte order)
 func IPFromUint32(ip uint32) net.IP {
-	return net.IPv4(byte(ip>>24), byte(ip>>16), byte(ip>>8), byte(ip))
+	return net.IPv4(byte(ip), byte(ip>>8), byte(ip>>16), byte(ip>>24))
 }
 
 // IPToUint32 converts net.IP to uint32 (assumes IPv4)
