@@ -1,0 +1,36 @@
+# Build artifacts
+bin/
+dist/
+*.o
+*.a
+*.so
+
+# Go build cache
+.go/
+*.out
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test artifacts
+/tmp/
+*.log
+*.prof
+*.test
+
+# Temporary files
+.env
+.env.local
+*.tmp
+
+# eBPF generated files (but keep checked-in versions)
+# *.go in internal/monitor/ from bpf2go are checked in
+
+# OS
+.DS_Store
+Thumbs.db
