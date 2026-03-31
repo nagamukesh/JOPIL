@@ -61,6 +61,7 @@ type bpfSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfProgramSpecs struct {
+	TcProbeFunc  *ebpf.ProgramSpec `ebpf:"tc_probe_func"`
 	XdpProbeFunc *ebpf.ProgramSpec `ebpf:"xdp_probe_func"`
 }
 
@@ -119,11 +120,13 @@ type bpfVariables struct {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfPrograms struct {
+	TcProbeFunc  *ebpf.Program `ebpf:"tc_probe_func"`
 	XdpProbeFunc *ebpf.Program `ebpf:"xdp_probe_func"`
 }
 
 func (p *bpfPrograms) Close() error {
 	return _BpfClose(
+		p.TcProbeFunc,
 		p.XdpProbeFunc,
 	)
 }

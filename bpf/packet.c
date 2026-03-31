@@ -6,6 +6,7 @@
 #include <linux/tcp.h>
 #include <linux/udp.h>
 #include <linux/icmp.h>
+#include <linux/pkt_sched.h>
 #include <bpf/bpf_helpers.h>
 #include <bpf/bpf_endian.h>
 
@@ -18,6 +19,11 @@
 #endif
 #ifndef IPPROTO_ICMP
 #define IPPROTO_ICMP 1
+#endif
+
+// TC action codes
+#ifndef TC_ACT_OK
+#define TC_ACT_OK 0
 #endif
 
 struct packet_event {
@@ -114,7 +120,13 @@ int xdp_probe_func(struct xdp_md *ctx) {
         if ((void *)(tcp + 1) <= data_end) {
             evt->sport     = bpf_ntohs(tcp->source);
             evt->dport     = bpf_ntohs(tcp->dest);
-            evt->tcp_flags = tcp->th_flags;
+            // TCP flags are at offset 13 in the TCP header (after source, dest, seq, ack, data_offset/reserved/flags)
+            // Byte at offset 13 contains: [data_offset(4) | reserved(3) | NS(1)] | flags
+            // We want the flags byte, which is at tcp offset + 13
+            __u8 *flags_byte = (__u8 *)tcp + 13;
+            if ((void *)(flags_byte + 1) <= data_end) {
+                evt->tcp_flags = *flags_byte;
+            }
         }
     } else if (ip->protocol == IPPROTO_UDP) {
         struct udphdr *udp = ip_end;
@@ -202,7 +214,11 @@ int tc_probe_func(struct __sk_buff *ctx) {
         if ((void *)(tcp + 1) <= data_end) {
             evt->sport     = bpf_ntohs(tcp->source);
             evt->dport     = bpf_ntohs(tcp->dest);
-            evt->tcp_flags = tcp->th_flags;
+            // TCP flags at offset 13
+            __u8 *flags_byte = (__u8 *)tcp + 13;
+            if ((void *)(flags_byte + 1) <= data_end) {
+                evt->tcp_flags = *flags_byte;
+            }
         }
     } else if (ip->protocol == IPPROTO_UDP) {
         struct udphdr *udp = ip_end;
