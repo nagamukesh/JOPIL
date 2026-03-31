@@ -19,10 +19,8 @@ type PacketEvent struct {
 	Len          uint32
 	CpuId        uint32
 	QueueMapping uint16
-	Pad2         uint16
-	
-	// Optional payload for protocol-specific parsing (DNS, HTTP, etc.)
-	Payload []byte // Raw packet payload (not captured in real eBPF, but useful for testing)
+	DNSPayloadLen uint16     // Length of DNS payload (0 if not DNS)
+	DNSPayload   []byte     // Raw DNS packet data (only for port 53 UDP)
 }
 
 // DNSQuery represents a single DNS query/response event

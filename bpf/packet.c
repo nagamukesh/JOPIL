@@ -32,7 +32,8 @@ struct packet_event {
     __u32 len;
     __u32 cpu_id;
     __u16 queue_mapping;
-    __u16 pad3;
+    __u16 dns_payload_len;  // Length of DNS payload (0 if not DNS)
+    __u8  dns_payload[512]; // DNS packet data (only for port 53 UDP)
 };
 
 // Single shared ring buffer — 1MB total
@@ -105,7 +106,7 @@ int xdp_probe_func(struct xdp_md *ctx) {
     evt->sport         = 0;
     evt->dport         = 0;
     evt->pad2          = 0;
-    evt->pad3          = 0;
+    evt->dns_payload_len = 0;
 
     // --- Transport layer (port extraction + TCP flags) ---
     if (ip->protocol == IPPROTO_TCP) {
@@ -120,12 +121,117 @@ int xdp_probe_func(struct xdp_md *ctx) {
         if ((void *)(udp + 1) <= data_end) {
             evt->sport = bpf_ntohs(udp->source);
             evt->dport = bpf_ntohs(udp->dest);
+            
+            // Capture DNS payload if dport==53
+            if (evt->dport == 53) {
+                void *payload_start = (void *)udp + sizeof(*udp);
+                void *payload_end = payload_start + 512;
+                if (payload_end > data_end) {
+                    payload_end = data_end;
+                }
+                int payload_len = payload_end - payload_start;
+                if (payload_len > 0 && payload_len <= 512) {
+                    #pragma unroll
+                    for (int i = 0; i < 512; i++) {
+                        if (payload_start + i < payload_end) {
+                            evt->dns_payload[i] = *((__u8 *)(payload_start + i));
+                        }
+                    }
+                    evt->dns_payload_len = payload_len;
+                }
+            }
         }
     }
     // ICMP and others: sport/dport stay 0 — that's correct
 
     bpf_ringbuf_submit(evt, 0);
     return XDP_PASS;
+}
+
+// TC probe function (for both ingress and egress, capturing full packets)
+SEC("tc")
+int tc_probe_func(struct __sk_buff *ctx) {
+    void *data_end = (void *)(long)ctx->data_end;
+    void *data     = (void *)(long)ctx->data;
+
+    // --- Ethernet header ---
+    struct ethhdr *eth = data;
+    if ((void *)(eth + 1) > data_end)
+        return TC_ACT_OK;
+
+    // Only handle IPv4 for now
+    if (bpf_ntohs(eth->h_proto) != ETH_P_IP)
+        return TC_ACT_OK;
+
+    // --- IP header ---
+    struct iphdr *ip = (void *)(eth + 1);
+    if ((void *)(ip + 1) > data_end)
+        return TC_ACT_OK;
+
+    // ihl is in 32-bit words; minimum is 5 (20 bytes)
+    if (ip->ihl < 5)
+        return TC_ACT_OK;
+
+    void *ip_end = (void *)ip + (ip->ihl * 4);
+    if (ip_end > data_end)
+        return TC_ACT_OK;
+
+    // Reserve ring buffer space
+    struct packet_event *evt = bpf_ringbuf_reserve(&events, sizeof(*evt), 0);
+    if (!evt)
+        return TC_ACT_OK;
+
+    evt->timestamp_ns  = bpf_ktime_get_ns();
+    evt->cpu_id        = bpf_get_smp_processor_id();
+    evt->queue_mapping = 0;  // TC doesn't have qmap
+    evt->len           = bpf_ntohs(ip->tot_len);
+    evt->saddr         = ip->saddr;
+    evt->daddr         = ip->daddr;
+    evt->protocol      = ip->protocol;
+    evt->tcp_flags     = 0;
+    evt->sport         = 0;
+    evt->dport         = 0;
+    evt->pad2          = 0;
+    evt->dns_payload_len = 0;
+
+    // --- Transport layer (port extraction + TCP flags + DNS payload) ---
+    if (ip->protocol == IPPROTO_TCP) {
+        struct tcphdr *tcp = ip_end;
+        if ((void *)(tcp + 1) <= data_end) {
+            evt->sport     = bpf_ntohs(tcp->source);
+            evt->dport     = bpf_ntohs(tcp->dest);
+            evt->tcp_flags = tcp->th_flags;
+        }
+    } else if (ip->protocol == IPPROTO_UDP) {
+        struct udphdr *udp = ip_end;
+        if ((void *)(udp + 1) <= data_end) {
+            evt->sport = bpf_ntohs(udp->source);
+            evt->dport = bpf_ntohs(udp->dest);
+            
+            // Capture DNS payload if dport==53 (or sport==53 for responses)
+            if (evt->dport == 53 || evt->sport == 53) {
+                void *payload_start = (void *)udp + sizeof(*udp);
+                void *payload_end = payload_start + 512;
+                if (payload_end > data_end) {
+                    payload_end = data_end;
+                }
+                int payload_len = payload_end - payload_start;
+                if (payload_len > 0 && payload_len <= 512) {
+                    #pragma unroll
+                    for (int i = 0; i < 512; i++) {
+                        if (payload_start + i < payload_end) {
+                            evt->dns_payload[i] = *((__u8 *)(payload_start + i));
+                        }
+                    }
+                    evt->dns_payload_len = payload_len;
+                }
+            }
+        }
+    }
+    // ICMP and others: sport/dport stay 0 — that's correct
+
+    bpf_ringbuf_submit(evt, 0);
+    return TC_ACT_OK;
 }
 
 char __license[] SEC("license") = "GPL";

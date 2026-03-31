@@ -148,8 +148,8 @@ func (fa *FlowAggregator) processEvent(evt *model.PacketEvent) {
 	var dnsQuery *model.DNSQuery
 	var dnsQueries []*model.DNSQuery
 	var dnsQueryNames map[string]uint64
-	if evt.Protocol == 17 && evt.Dport == 53 && len(evt.Payload) > 0 { // UDP
-		dnsResp := parser.ParseDNS(evt.Payload)
+	if evt.Protocol == 17 && (evt.Dport == 53 || evt.Sport == 53) && len(evt.DNSPayload) > 0 { // UDP
+		dnsResp := parser.ParseDNS(evt.DNSPayload)
 		if dnsResp != nil && len(dnsResp.Questions) > 0 {
 			for _, q := range dnsResp.Questions {
 				dq := &model.DNSQuery{

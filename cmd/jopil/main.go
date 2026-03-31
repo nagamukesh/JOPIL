@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -47,17 +46,15 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Setup logging — redirect to file or discard (never stderr while TUI runs)
+	// Setup logging
 	if *logFile != "" {
 		f, err := os.OpenFile(*logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 		if err != nil {
 			log.Fatalf("Could not open log file: %v", err)
 		}
 		log.SetOutput(f)
-	} else {
-		// Discard log output so it doesn't corrupt the TUI
-		log.SetOutput(io.Discard)
 	}
+	log.SetFlags(log.Ltime | log.Lshortfile)
 
 	// Must be root for XDP
 	if os.Geteuid() != 0 {
