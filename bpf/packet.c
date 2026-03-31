@@ -153,25 +153,27 @@ SEC("tc")
 int tc_probe_func(struct __sk_buff *ctx) {
     void *data_end = (void *)(long)ctx->data_end;
     void *data     = (void *)(long)ctx->data;
-
-    // --- Ethernet header ---
+    
+    struct iphdr *ip = NULL;
+    
+    // Try parsing with ethernet header first (ingress typically has it)
     struct ethhdr *eth = data;
-    if ((void *)(eth + 1) > data_end)
-        return TC_ACT_OK;
-
-    // Only handle IPv4 for now
-    if (bpf_ntohs(eth->h_proto) != ETH_P_IP)
-        return TC_ACT_OK;
-
-    // --- IP header ---
-    struct iphdr *ip = (void *)(eth + 1);
+    if ((void *)(eth + 1) <= data_end && bpf_ntohs(eth->h_proto) == ETH_P_IP) {
+        ip = (void *)(eth + 1);
+    } else {
+        // Egress packets (especially locally generated) might not have ethernet header
+        // Try parsing IP directly
+        ip = (struct iphdr *)data;
+    }
+    
+    // Validate IP header
     if ((void *)(ip + 1) > data_end)
         return TC_ACT_OK;
-
+    
     // ihl is in 32-bit words; minimum is 5 (20 bytes)
     if (ip->ihl < 5)
         return TC_ACT_OK;
-
+    
     void *ip_end = (void *)ip + (ip->ihl * 4);
     if (ip_end > data_end)
         return TC_ACT_OK;
@@ -208,7 +210,7 @@ int tc_probe_func(struct __sk_buff *ctx) {
             evt->sport = bpf_ntohs(udp->source);
             evt->dport = bpf_ntohs(udp->dest);
             
-            // Capture DNS payload if dport==53 (or sport==53 for responses)
+            // Capture DNS payload if dport==53 or sport==53 (for responses)
             if (evt->dport == 53 || evt->sport == 53) {
                 void *payload_start = (void *)udp + sizeof(*udp);
                 void *payload_end = payload_start + 512;

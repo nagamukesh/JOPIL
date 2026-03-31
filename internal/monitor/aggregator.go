@@ -3,6 +3,8 @@ package monitor
 import (
 	"context"
 	"fmt"
+	"log"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -104,7 +106,10 @@ func (fa *FlowAggregator) GetGlobalStats() *model.GlobalStats {
 // aggregateLoop processes incoming packet events
 func (fa *FlowAggregator) aggregateLoop(ctx context.Context) {
 	defer func() {
-		recover()
+		if r := recover(); r != nil {
+			log.Printf("[PANIC] Aggregator loop recovered from panic: %v\n", r)
+			log.Printf("[PANIC] Stack trace:\n%s\n", debug.Stack())
+		}
 	}()
 
 	for {
@@ -126,6 +131,17 @@ func (fa *FlowAggregator) aggregateLoop(ctx context.Context) {
 
 // processEvent processes a single packet event
 func (fa *FlowAggregator) processEvent(evt *model.PacketEvent) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PANIC] Event processing panicked: %v (packet: %d.%d.%d.%d:%d -> %d.%d.%d.%d:%d)\n",
+				r,
+				evt.Saddr&0xFF, (evt.Saddr>>8)&0xFF, (evt.Saddr>>16)&0xFF, (evt.Saddr>>24)&0xFF, evt.Sport,
+				evt.Daddr&0xFF, (evt.Daddr>>8)&0xFF, (evt.Daddr>>16)&0xFF, (evt.Daddr>>24)&0xFF, evt.Dport)
+			log.Printf("[PANIC] Stack trace:\n%s\n", debug.Stack())
+			// Continue processing next packet instead of crashing
+		}
+	}()
+
 	// Prepare data BEFORE acquiring lock (minimize critical section)
 	srcIP := model.IPFromUint32(evt.Saddr)
 	dstIP := model.IPFromUint32(evt.Daddr)
@@ -141,7 +157,7 @@ func (fa *FlowAggregator) processEvent(evt *model.PacketEvent) {
 		DstPort:    evt.Dport,
 		Length:     evt.Len,
 		Direction:  "forward", // Will update after determining direction
-		TCPFlags:   evt.Protocol,
+		TCPFlags:   evt.TCPFlags,
 	}
 	
 	// Parse DNS BEFORE lock (this is the slow operation)
