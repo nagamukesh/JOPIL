@@ -12,6 +12,30 @@ import (
 	"github.com/mukesh/jopil/internal/parser"
 )
 
+// Configuration constants
+const (
+	DefaultFlowChannelSize  = 100        // Flow channel buffer size
+	MinPacketBufferSize     = 1000       // Minimum packet history per flow
+	MaxPacketBufferSize     = 50000      // Maximum packet history per flow
+	DefaultPacketBufferSize = 5000       // Default packet history per flow
+
+	// TCP Flags (RFC 793)
+	TH_FIN = 0x01 // Fin
+	TH_SYN = 0x02 // Syn
+	TH_RST = 0x04 // Reset
+	TH_PSH = 0x08 // Push
+	TH_ACK = 0x10 // Ack
+	TH_URG = 0x20 // Urgent
+
+	// Protocol numbers
+	ProtocolTCP  = 6
+	ProtocolUDP  = 17
+	ProtocolICMP = 1
+
+	// DNS constants
+	DNSPort = 53
+)
+
 // FlowAggregator correlates packets into flows and tracks statistics
 type FlowAggregator struct {
 	flows             map[string]*model.Flow
@@ -35,16 +59,16 @@ type GlobalAggregatorStats struct {
 
 // NewFlowAggregator creates a new flow aggregator
 func NewFlowAggregator(eventChan <-chan *model.PacketEvent, flowTimeout time.Duration, packetBufferSize int) *FlowAggregator {
-	if packetBufferSize < 1000 {
-		packetBufferSize = 1000
+	if packetBufferSize < MinPacketBufferSize {
+		packetBufferSize = MinPacketBufferSize
 	}
-	if packetBufferSize > 50000 {
-		packetBufferSize = 50000
+	if packetBufferSize > MaxPacketBufferSize {
+		packetBufferSize = MaxPacketBufferSize
 	}
 	return &FlowAggregator{
 		flows:            make(map[string]*model.Flow),
 		eventChan:        eventChan,
-		flowChan:         make(chan *model.Flow, 100),
+		flowChan:         make(chan *model.Flow, DefaultFlowChannelSize),
 		flowTimeout:      flowTimeout,
 		stopChan:         make(chan struct{}),
 		packetBufferSize: packetBufferSize,
@@ -92,6 +116,28 @@ func (fa *FlowAggregator) GetGlobalStats() *model.GlobalStats {
 		lossRate = float64(fa.globalStats.DroppedPackets) / float64(fa.globalStats.TotalPackets+fa.globalStats.DroppedPackets)
 	}
 
+	now := time.Now()
+	timeDeltaSec := now.Sub(fa.globalStats.LastUpdated).Seconds()
+	if timeDeltaSec < 0.001 {
+		timeDeltaSec = 0.001 // Avoid division by zero
+	}
+
+	// Calculate rates since last update
+	pps := 0.0  // packets per second
+	bps := 0.0  // bytes per second
+	mbps := 0.0 // megabits per second
+	
+	// In a real implementation, we'd track previous stats to calculate delta
+	// For now, estimate from total / uptime
+	uptimeSec := now.Sub(fa.globalStats.LastUpdated).Seconds()
+	if uptimeSec > 0 {
+		// Rough estimate: would need previous snapshot for accurate rates
+		// This is a placeholder; better approach tracks incremental deltas
+		pps = float64(fa.globalStats.TotalPackets) / uptimeSec
+		bps = float64(fa.globalStats.TotalBytes) / uptimeSec
+		mbps = (bps * 8) / 1000000 // Convert bytes/sec to Mbps
+	}
+
 	return &model.GlobalStats{
 		TotalPackets:   fa.globalStats.TotalPackets,
 		TotalBytes:     fa.globalStats.TotalBytes,
@@ -99,7 +145,10 @@ func (fa *FlowAggregator) GetGlobalStats() *model.GlobalStats {
 		DroppedPackets: fa.globalStats.DroppedPackets,
 		PacketLossRate: lossRate,
 		UpstreamTime:   fa.globalStats.LastUpdated,
-		CurrentTime:    time.Now(),
+		CurrentTime:    now,
+		PacketsPerSec:  pps,
+		BytesPerSec:    bps,
+		MbpsRate:       mbps,
 	}
 }
 
@@ -164,7 +213,7 @@ func (fa *FlowAggregator) processEvent(evt *model.PacketEvent) {
 	var dnsQuery *model.DNSQuery
 	var dnsQueries []*model.DNSQuery
 	var dnsQueryNames map[string]uint64
-	if evt.Protocol == 17 && (evt.Dport == 53 || evt.Sport == 53) && len(evt.DNSPayload) > 0 { // UDP
+	if evt.Protocol == ProtocolUDP && (evt.Dport == DNSPort || evt.Sport == DNSPort) && len(evt.DNSPayload) > 0 { // UDP
 		dnsResp := parser.ParseDNS(evt.DNSPayload)
 		if dnsResp != nil && len(dnsResp.Questions) > 0 {
 			for _, q := range dnsResp.Questions {
@@ -278,18 +327,8 @@ func (fa *FlowAggregator) processEvent(evt *model.PacketEvent) {
 	}
 
 	// Update TCP state if applicable
-	if evt.Protocol == 6 { // TCP
+	if evt.Protocol == ProtocolTCP {
 		flow.TCPFlags = evt.TCPFlags
-		
-		// Constants for TCP flags
-		const (
-			TH_FIN = 0x01
-			TH_SYN = 0x02
-			TH_RST = 0x04
-			TH_PSH = 0x08
-			TH_ACK = 0x10
-			TH_URG = 0x20
-		)
 		
 		// Track which flags we've seen
 		if evt.TCPFlags&TH_SYN != 0 {
